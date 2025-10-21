@@ -13,19 +13,12 @@ run :: proc () -> bool {
 
     data := os.read_entire_file_from_filename("CascadiaCode-Regular.otf") or_return
 
-    fmt.println(data[0:16])
-    _, rest := parse_binary(SfntVersion, data) or_return
-    fmt.println(rest[0:16])
-
-    numTables, _ := parse_binary(u16, rest) or_return
-    fmt.println(numTables)
-
     tableDirectory, _ := parse_TableDirectory(data) or_return
-    // fmt.println(tableDirectory)
+    fmt.println(tableDirectory)
 
     for record in tableDirectory.records {
-        // tag := record.tag
-        // fmt.println(transmute(string)tag[:])
+        tag := record.tag
+        fmt.println(transmute(string)tag[:])
     }
 
     return true

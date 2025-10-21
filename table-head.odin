@@ -4,7 +4,7 @@ import mathfx "core:math/fixed"
 import "core:time"
 import "core:mem"
 
-Table_head_Flag :: enum u16 {
+Table_head_Flag :: enum u16be {
     BaselineYEqual0                     = 0,
     LeftSidebearingPointXEqual0         = 1,
     InstructionsMayDependOnPointSize    = 2,
@@ -17,9 +17,9 @@ Table_head_Flag :: enum u16 {
     LastResortFont                      = 14,
 }
 
-Table_head_Flags :: distinct bit_set[Table_head_Flag; u16]
+Table_head_Flags :: distinct bit_set[Table_head_Flag; u16be]
 
-Table_head_MacStyle_Flag :: enum u16 {
+Table_head_MacStyle_Flag :: enum u16be {
     Bold,
     Italic,
     Underline,
@@ -29,9 +29,9 @@ Table_head_MacStyle_Flag :: enum u16 {
     Extended,
 }
 
-Table_head_MacStyle :: distinct bit_set[Table_head_MacStyle_Flag; u16]
+Table_head_MacStyle :: distinct bit_set[Table_head_MacStyle_Flag; u16be]
 
-Table_head_FontDirectionHint :: enum i16 {
+Table_head_FontDirectionHint :: enum i16be {
     DEPRECATED_FullyMixedDirectionalGlyphs  = 0,
     DEPRECATED_OnlyStronglyLeftToRight      = 1,
     Value                                   = 2,
@@ -39,34 +39,34 @@ Table_head_FontDirectionHint :: enum i16 {
     DEPRECATED_Negative1Neutral             = -2,
 }
 
-Table_head_IndexToLocFormat :: enum i16 {
+Table_head_IndexToLocFormat :: enum i16be {
     Offset16    = 0,
     Offset32    = 1,
 }
 
-Table_head_MagicNumber :: enum u32 {
+Table_head_MagicNumber :: enum u32be {
     Value = 0x5F0F3CF5,
 }
 
-Table_head_GlyphDataFormat :: enum i16 {
+Table_head_GlyphDataFormat :: enum i16be {
     Current = 0,
 }
 
 Table_head_Header :: struct #packed {
     version             : Version,
-    fontRevision        : fixed,
-    checksumAdjustment  : u32,
+    fontRevision        : fixedbe,
+    checksumAdjustment  : u32be,
     magicNumber         : Table_head_MagicNumber,
     flags               : Table_head_Flags,
-    unitsPerEm          : u16,
+    unitsPerEm          : u16be,
     created             : longdatetime,
     modified            : longdatetime,
-    xMin                : i16,
-    yMin                : i16,
-    xMax                : i16,
-    yMax                : i16,
+    xMin                : i16be,
+    yMin                : i16be,
+    xMax                : i16be,
+    yMax                : i16be,
     macStyle            : Table_head_MacStyle,
-    lowestRecPPEM       : u16,
+    lowestRecPPEM       : u16be,
     fontDirectionHint   : Table_head_FontDirectionHint,
     indexToLocFormat    : Table_head_IndexToLocFormat,
     glyphDataFormat     : Table_head_GlyphDataFormat,
