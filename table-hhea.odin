@@ -23,3 +23,12 @@ Table_hhea_Header :: struct #packed {
     metricDataFormat    : i16be,
     numberOfHMetrics    : u16be,
 }
+
+parse_Table_hhea_Header :: proc (stream : []u8) -> (value : Table_hhea_Header, rest : []u8, ok : bool = false) {
+    rest = stream
+
+    value, rest = parse_binary(Table_hhea_Header, rest) or_return
+
+    ok = true
+    return
+}

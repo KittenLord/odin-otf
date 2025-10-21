@@ -130,3 +130,93 @@ CollectionHeader2 :: struct #packed {
     dsigLength      : u32be,
     dsigOffset      : u32be,
 }
+
+
+
+PlatformId :: enum u16be {
+    Unicode,
+    Macintosh,
+    ISO,
+    Windows,
+    Custom,
+}
+
+EncodingId_Unicode :: enum u16be {
+    Unicode1_0,     // DEPRECATED
+    Unicode1_1,     // DEPRECATED
+    ISO10646,       // DEPRECATED
+
+    Unicode2_0_BMPOnly, // format 4 or 6
+    Unicode2_0,         // format 10 or 12
+    UnicodeVarSeq,      // format 14 (iff)
+    UnicodeFull,        // format 13 (iff)
+}
+
+// might as well be deprecated
+EncodingId_Macintosh :: enum u16be {
+    Roman,
+    Japanese,
+    ChineseTraditional,
+    Korean,
+    Arabic,
+    Hebrew,
+    Greek,
+    Russian,
+    RSymbol,
+    Devanagari,
+    Gurmukhi,
+    Gujarati,
+    Odia,
+    Bangla,
+    Tamil,
+    Telugu,
+    Kannada,
+    Malayalam,
+    Sinhalese,
+    Burmese,
+    Khmer,
+    Thai,
+    Laotian,
+    Georgian,
+    Armenian,
+    ChineseSimplified,
+    Tibetan,
+    Mongolian,
+    Geez,
+    Slavic,
+    Vietnamese,
+    Sindhi,
+    Uninterpreted,
+}
+
+// DEPRECATED
+EncodingId_ISO :: enum u16be {
+    ASCII7,
+    ISO10646,
+    ISO8859_1,
+}
+
+EncodingId_Windows :: enum u16be {
+    Symbol,         // format 4
+    UnicodeBMP,     // format 4
+    ShiftJIS,
+    PRC,
+    Big5,
+    Wansung,
+    Johab,
+    __reserved1,
+    __reserved2,
+    __reserved3,
+    UnicodeFull,    // format 12
+}
+
+validateEncodingId :: proc (encoding : u16be, platform : PlatformId) -> bool {
+    switch platform {
+    case .Unicode:   return is_in_enum(cast(EncodingId_Unicode)encoding)
+    case .Macintosh: return is_in_enum(cast(EncodingId_Macintosh)encoding)
+    case .ISO:       return is_in_enum(cast(EncodingId_ISO)encoding)
+    case .Windows:   return is_in_enum(cast(EncodingId_Windows)encoding)
+    case .Custom:    return 0 <= encoding && encoding <= 255
+    }
+    return true
+}

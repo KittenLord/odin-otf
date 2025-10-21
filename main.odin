@@ -16,6 +16,8 @@ run :: proc () -> bool {
     tableDirectory, _ := parse_TableDirectory(data) or_return
     fmt.println(tableDirectory)
 
+    fmt.println(size_of(Table_hhea_Header))
+
     for record in tableDirectory.records {
         tag := record.tag
         fmt.println(transmute(string)tag[:])

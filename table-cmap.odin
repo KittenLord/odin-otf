@@ -8,96 +8,15 @@ Table_cmap :: struct {
 
 }
 
-Table_cmap_Version :: enum u16be {
-    Value = 0
-}
-
 Table_cmap_Header :: struct #packed {
-    version         : Table_cmap_Version,
+    version         : u16be,
     numTables       : u16be,
 
     encodingRecords : [/*numTables*/]Table_cmap_EncodingRecord
 }
 
-Table_cmap_PlatformId :: enum u16be {
-    Unicode,
-    Macintosh,
-    ISO,
-    Windows,
-    Custom,
-}
-
-Table_cmap_EncodingId_Unicode :: enum u16be {
-    Unicode1_0,     // DEPRECATED
-    Unicode1_1,     // DEPRECATED
-    ISO10646,       // DEPRECATED
-
-    Unicode2_0_BMPOnly, // format 4 or 6
-    Unicode2_0,         // format 10 or 12
-    UnicodeVarSeq,      // format 14 (iff)
-    UnicodeFull,        // format 13 (iff)
-}
-
-// might as well be deprecated
-Table_cmap_EncodingId_Macintosh :: enum u16be {
-    Roman,
-    Japanese,
-    ChineseTraditional,
-    Korean,
-    Arabic,
-    Hebrew,
-    Greek,
-    Russian,
-    RSymbol,
-    Devanagari,
-    Gurmukhi,
-    Gujarati,
-    Odia,
-    Bangla,
-    Tamil,
-    Telugu,
-    Kannada,
-    Malayalam,
-    Sinhalese,
-    Burmese,
-    Khmer,
-    Thai,
-    Laotian,
-    Georgian,
-    Armenian,
-    ChineseSimplified,
-    Tibetan,
-    Mongolian,
-    Geez,
-    Slavic,
-    Vietnamese,
-    Sindhi,
-    Uninterpreted,
-}
-
-// DEPRECATED
-Table_cmap_EncodingId_ISO :: enum u16be {
-    ASCII7,
-    ISO10646,
-    ISO8859_1,
-}
-
-Table_cmap_EncodingId_Windows :: enum u16be {
-    Symbol,         // format 4
-    UnicodeBMP,     // format 4
-    ShiftJIS,
-    PRC,
-    Big5,
-    Wansung,
-    Johab,
-    __reserved1,
-    __reserved2,
-    __reserved3,
-    UnicodeFull,    // format 12
-}
-
 Table_cmap_EncodingRecord :: struct #packed {
-    platformId      : Table_cmap_PlatformId,
+    platformId      : PlatformId,
     encodingId      : u16be,
     subtableOffset  : off32be,
 }
@@ -459,21 +378,10 @@ Table_cmap_Subtable :: union {
     Table_cmap_Subtable_UnicodeVariationSequences,
 }
 
-validateEncodingId :: proc (encoding : u16be, platform : Table_cmap_PlatformId) -> bool {
-    switch platform {
-    case .Unicode:   return is_in_enum(cast(Table_cmap_EncodingId_Unicode)encoding)
-    case .Macintosh: return is_in_enum(cast(Table_cmap_EncodingId_Macintosh)encoding)
-    case .ISO:       return is_in_enum(cast(Table_cmap_EncodingId_ISO)encoding)
-    case .Windows:   return is_in_enum(cast(Table_cmap_EncodingId_Windows)encoding)
-    case .Custom:    return 0 <= encoding && encoding <= 255
-    }
-    return true
-}
-
 parse_Table_cmap_EncodingRecord :: proc (stream : []u8) -> (value : Table_cmap_EncodingRecord, rest : []u8, ok : bool = false) {
     rest = stream
 
-    value.platformId, rest = parse_binary(Table_cmap_PlatformId, rest) or_return
+    value.platformId, rest = parse_binary(PlatformId, rest) or_return
     value.encodingId, rest = parse_binary(u16be, rest) or_return
     value.subtableOffset, rest = parse_binary(off32be, rest) or_return
 
@@ -487,8 +395,7 @@ parse_Table_cmap_EncodingRecord :: proc (stream : []u8) -> (value : Table_cmap_E
 parse_Table_cmap_Header :: proc (stream : []u8) -> (value : Table_cmap_Header, rest : []u8, ok : bool = false) {
     rest = stream
 
-    value.version, rest = parse_binary(Table_cmap_Version, rest) or_return
-    is_in_enum(value.version) or_return
+    value.version, rest = parse_binary(u16be, rest) or_return
 
     value.numTables, rest = parse_binary(u16be, rest) or_return
     if value.numTables > 20 do return
