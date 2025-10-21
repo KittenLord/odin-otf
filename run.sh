@@ -1,2 +1,1 @@
-odin build . -out:out
-./out
+odin build . -out:out && ./out

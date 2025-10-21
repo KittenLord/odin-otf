@@ -22,7 +22,7 @@ i16font :: distinct i16
 u16font :: distinct u16
 
 // NOTE: Seconds since 12:00 midnight January 1, 1904 UTC
-datetime :: distinct i64
+longdatetime :: distinct i64
 
 Tag :: distinct [4]u8
 TAG_MIN :: 0x20
@@ -49,7 +49,7 @@ SfntVersion :: enum u32 {
     CFFData          = 0x4F54544F,
 }
 
-TableDirectory :: struct {
+TableDirectory :: struct #packed {
     sfntVersion     : SfntVersion,
     numTables       : u16,
 
@@ -64,11 +64,35 @@ TableDirectory :: struct {
     records         : [/*numTables*/]TableRecord,
 }
 
-TableRecord :: struct {
+TableRecord :: struct #packed {
     tag             : Tag,
     checksum        : u32,
     offset          : off32,
     length          : u32,
+}
+
+parse_TableDirectory :: proc (stream : []u8) -> (value : TableDirectory, rest : []u8, ok : bool = false) {
+    rest = stream
+
+    value.sfntVersion, rest = parse_binary(SfntVersion, rest) or_return
+    value.numTables, rest = parse_binary(u16, rest) or_return
+    value.searchRange, rest = parse_binary(u16, rest) or_return
+    value.entrySelector, rest = parse_binary(u16, rest) or_return
+    value.rangeShift, rest = parse_binary(u16, rest) or_return
+
+    is_in_enum(value.sfntVersion) or_return
+
+    recordsStart := rest
+
+    for i in 0 ..< value.numTables {
+        record : TableRecord
+        record, rest = parse_binary(TableRecord, rest) or_return
+    }
+
+    value.records = (cast([^]TableRecord)raw_data(recordsStart))[0:value.numTables]
+
+    ok = true
+    return
 }
 
 calculateChecksum :: proc (data : []u32) -> (sum : u32 = 0) {
@@ -78,7 +102,7 @@ calculateChecksum :: proc (data : []u32) -> (sum : u32 = 0) {
 
 // checksumAdjustment := 0xB1B0AfBA - checksum
 
-CollectionHeader1 :: struct {
+CollectionHeader1 :: struct #packed {
     tag             : Tag,
     version         : Version,
     numFonts        : u32,
@@ -91,7 +115,7 @@ DigitalSignatureTag :: enum u32 {
     Present         = 0x44534947,
 }
 
-CollectionHeader2 :: struct {
+CollectionHeader2 :: struct #packed {
     tag             : Tag,
     version         : Version,
     numFonts        : u32,
