@@ -3,7 +3,15 @@ package font
 import mathfx "core:math/fixed"
 import "core:time"
 
-u24 :: distinct u32
+u24 :: distinct [3]u8
+
+u24_to_u32 :: proc (i : u24) -> u32 {
+    return ((cast(u32)i[0] << 0) | (cast(u32)i[1] << 8) | (cast(u32)i[2] << 16))
+}
+
+u32_to_u24 :: proc (i : u32) -> u24 {
+    return { u8((i >> 0) & 0xFF), u8((i >> 8) & 0xFF), u8((i >> 16) & 0xFF) }
+}
 
 fixed :: mathfx.Fixed16_16
 

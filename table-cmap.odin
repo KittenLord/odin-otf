@@ -12,7 +12,7 @@ Table_cmap_Version :: enum u16 {
     Value = 0
 }
 
-Table_cmap_Header :: struct {
+Table_cmap_Header :: struct #packed {
     version         : Table_cmap_Version,
     numTables       : u16,
 
@@ -96,7 +96,7 @@ Table_cmap_EncodingId_Windows :: enum u16 {
     UnicodeFull,    // format 12
 }
 
-Table_cmap_EncodingRecord :: struct {
+Table_cmap_EncodingRecord :: struct #packed {
     platformId      : Table_cmap_PlatformId,
     encodingId      : u16,
     subtableOffset  : off32,
@@ -114,8 +114,11 @@ Table_cmap_SubtableFormat :: enum u16 {
     UnicodeVariationSequences   = 14,
 }
 
+// TODO: i made the decoders take and output a stream of bytes,
+// but i suspect that the actual API will be different, fix
+
 // 0
-Table_cmap_Subtable_ByteEncodingTable :: struct {
+Table_cmap_Subtable_ByteEncodingTable :: struct #packed {
     format              : Table_cmap_SubtableFormat,
     length              : u16,
     language            : u16,
@@ -133,7 +136,7 @@ Table_cmap_decode_ByteEncodingTable :: proc (subtable : Table_cmap_Subtable_Byte
     return
 }
 
-Table_cmap_Subtable_HighByteMappingThroughTable_SubHeader :: struct {
+Table_cmap_Subtable_HighByteMappingThroughTable_SubHeader :: struct #packed {
     firstCode           : u16,
     entryCount          : u16,
     idDelta             : i16,
@@ -141,7 +144,7 @@ Table_cmap_Subtable_HighByteMappingThroughTable_SubHeader :: struct {
 }
 
 // 2
-Table_cmap_Subtable_HighByteMappingThroughTable :: struct {
+Table_cmap_Subtable_HighByteMappingThroughTable :: struct #packed {
     format              : Table_cmap_SubtableFormat,
     length              : u16,
     language            : u16,
@@ -169,7 +172,7 @@ Table_cmap_decode_HighByteMappingThroughTable :: proc (subtable : Table_cmap_Sub
     }
     else {
         charOffset := cast(u16)charKey - subHeader.firstCode
-        code = (cast([^]u16)mem.ptr_offset(&subtable.subHeaders[key].idRangeOffset, subHeader.idRangeOffset))[charOffset:][0]
+        code = (cast([^]u16)mem.ptr_offset(&subtable.subHeaders[key].idRangeOffset, subHeader.idRangeOffset))[charOffset]
         if code != 0 do code += cast(u16)subHeader.idDelta // NOTE: wraps mod 2^16
     }
 
@@ -178,7 +181,7 @@ Table_cmap_decode_HighByteMappingThroughTable :: proc (subtable : Table_cmap_Sub
 }
 
 // 4
-Table_cmap_Subtable_SegmentMappingToDeltaValues :: struct {
+Table_cmap_Subtable_SegmentMappingToDeltaValues :: struct #packed {
     format              : Table_cmap_SubtableFormat,
     length              : u16,
     language            : u16,
@@ -194,8 +197,40 @@ Table_cmap_Subtable_SegmentMappingToDeltaValues :: struct {
     // glyphIdArray        : []u16,
 }
 
+Table_cmap_decode_SegmentMappingToDeltaValues :: proc (subtable : Table_cmap_Subtable_SegmentMappingToDeltaValues, stream : []u8) -> (code : u16, rest : []u8, ok : bool = false) {
+    rest = stream
+
+    code = 0
+
+    char : u16
+    char, rest = parse_binary(u16, rest) or_return
+
+    segCount := subtable.segCountX2 / 2
+    for i in 0 ..< segCount {
+        start           := subtable.startCode[i]
+        end             := subtable.endCode[i]
+        idDelta         := subtable.idDelta[i]
+        idRangeOffset   := subtable.idRangeOffset[i]
+
+        if !(start <= char && char <= end) do continue
+
+        if idRangeOffset == 0 {
+            code = char + cast(u16)idDelta
+            break
+        }
+
+        charOffset := cast(u16)char - start
+        code = (cast([^]u16)mem.ptr_offset(&subtable.idRangeOffset[i], idRangeOffset))[charOffset]
+        if code != 0 do code += cast(u16)idDelta
+        break
+    }
+    
+    ok = true
+    return
+}
+
 // 6
-Table_cmap_Subtable_TrimmedTableMapping :: struct {
+Table_cmap_Subtable_TrimmedTableMapping :: struct #packed {
     format              : Table_cmap_SubtableFormat,
     length              : u16,
     language            : u16,
@@ -204,14 +239,28 @@ Table_cmap_Subtable_TrimmedTableMapping :: struct {
     glyphIdArray        : [/*entryCount*/]u16,
 }
 
-Table_cmap_Subtable_Mixed16And32BitCoverage_SequentialMapGroup :: struct {
+Table_cmap_decode_TrimmedTableMapping :: proc (subtable : Table_cmap_Subtable_TrimmedTableMapping, stream : []u8) -> (code : u16, rest : []u8, ok : bool = false) {
+    rest = stream
+
+    code = 0
+
+    char : u16
+    char, rest = parse_binary(u16, rest) or_return
+
+    if subtable.firstCode <= char && char <= (subtable.firstCode + subtable.entryCount) do code = subtable.glyphIdArray[char - subtable.firstCode]
+
+    ok = true
+    return
+}
+
+Table_cmap_Subtable_Mixed16And32BitCoverage_SequentialMapGroup :: struct #packed {
     startCharCode       : u32,
     endCharCode         : u32,
     startGlyphId        : u32,
 }
 
 // 8
-Table_cmap_Subtable_Mixed16And32BitCoverage :: struct {
+Table_cmap_Subtable_Mixed16And32BitCoverage :: struct #packed {
     format              : Table_cmap_SubtableFormat,
     reserved            : u16,
     length              : u32,
@@ -221,8 +270,35 @@ Table_cmap_Subtable_Mixed16And32BitCoverage :: struct {
     groups              : [/*numGroups*/]Table_cmap_Subtable_Mixed16And32BitCoverage_SequentialMapGroup
 }
 
+Table_cmap_decode_Mixed16And32BitCoverage :: proc (subtable : Table_cmap_Subtable_Mixed16And32BitCoverage, stream : []u8) -> (code : u32, rest : []u8, ok : bool = false) {
+    rest = stream
+
+    code = 0
+
+    c : u16
+    c, rest = parse_binary(u16, rest) or_return
+
+    is32 := subtable.is32[c / 8] & (1 << (7 - (c % 8))) != 0
+
+    char : u32 = cast(u32)c
+    if is32 {
+        c, rest = parse_binary(u16, rest) or_return
+        char |= (cast(u32)c) << 16
+    }
+
+    for group in subtable.groups {
+        if !(group.startCharCode <= char && char <= group.endCharCode) do continue
+
+        code = (char - group.startCharCode) + group.startGlyphId
+        break
+    }
+
+    ok = true
+    return
+}
+
 // 10
-Table_cmap_Subtable_TrimmedArray :: struct {
+Table_cmap_Subtable_TrimmedArray :: struct #packed {
     format              : Table_cmap_SubtableFormat,
     reserved            : u16,
     length              : u32,
@@ -232,14 +308,30 @@ Table_cmap_Subtable_TrimmedArray :: struct {
     glyphIdArray        : []u16,
 }
 
-Table_cmap_Subtable_SegmentedCoverage_SequentialMapGroup :: struct {
+Table_cmap_decode_TrimmedArray :: proc (subtable : Table_cmap_Subtable_TrimmedArray, stream : []u8) -> (code : u16, rest : []u8, ok : bool = false) {
+    rest = stream
+
+    char : u32
+    char, rest = parse_binary(u32, rest) or_return
+
+    code = 0
+
+    if subtable.startCharCode <= char && char < subtable.startCharCode + subtable.numChars {
+        code = subtable.glyphIdArray[char - subtable.startCharCode]
+    }
+
+    ok = true
+    return
+}
+
+Table_cmap_Subtable_SegmentedCoverage_SequentialMapGroup :: struct #packed {
     startCharCode       : u32,
     endCharCode         : u32,
     startGlyphId        : u32,
 }
 
 // 12
-Table_cmap_Subtable_SegmentedCoverage :: struct {
+Table_cmap_Subtable_SegmentedCoverage :: struct #packed {
     format              : Table_cmap_SubtableFormat,
     reserved            : u16,
     length              : u32,
@@ -248,14 +340,33 @@ Table_cmap_Subtable_SegmentedCoverage :: struct {
     groups              : [/*numGroups*/]Table_cmap_Subtable_SegmentedCoverage_SequentialMapGroup,
 }
 
-Table_cmap_Subtable_ManyToOneRangeMappings_ConstantMapGroup :: struct {
+Table_cmap_decode_SegmentedCoverage :: proc (subtable : Table_cmap_Subtable_SegmentedCoverage, stream : []u8) -> (code : u32, rest : []u8, ok : bool = false) {
+    rest = stream
+
+    char : u32
+    char, rest = parse_binary(u32, rest) or_return
+
+    code = 0
+
+    for group in subtable.groups {
+        if !(group.startCharCode <= char && char <= group.endCharCode) do continue
+
+        code = (char - group.startCharCode) + group.startGlyphId
+        break
+    }
+
+    ok = true
+    return
+}
+
+Table_cmap_Subtable_ManyToOneRangeMappings_ConstantMapGroup :: struct #packed {
     startCharCode       : u32,
     endCharCode         : u32,
     glyphId             : u32,
 }
 
 // 13
-Table_cmap_Subtable_ManyToOneRangeMappings :: struct {
+Table_cmap_Subtable_ManyToOneRangeMappings :: struct #packed {
     format              : Table_cmap_SubtableFormat,
     reserved            : u16,
     length              : u32,
@@ -264,38 +375,76 @@ Table_cmap_Subtable_ManyToOneRangeMappings :: struct {
     groups              : [/*numGroups*/]Table_cmap_Subtable_ManyToOneRangeMappings_ConstantMapGroup
 }
 
-Table_cmap_Subtable_UnicodeVariationSequences_VariationSelector :: struct {
+Table_cmap_decode_ManyToOneRangeMappings :: proc (subtable : Table_cmap_Subtable_ManyToOneRangeMappings, stream : []u8) -> (code : u32, rest : []u8, ok : bool = false) {
+    rest = stream
+
+    char : u32
+    char, rest = parse_binary(u32, rest) or_return
+
+    code = 0
+
+    for group in subtable.groups {
+        if !(group.startCharCode <= char && char <= group.endCharCode) do continue
+
+        code = group.glyphId
+        break
+    }
+
+    ok = true
+    return
+}
+
+Table_cmap_Subtable_UnicodeVariationSequences_VariationSelector :: struct #packed {
     varSelector         : u24,
     defaultUVSOffset    : off32,
     nonDefaultUVSOffset : off32,
 }
 
-Table_cmap_Subtable_UnicodeVariationSequences_UnicodeRange :: struct {
+Table_cmap_Subtable_UnicodeVariationSequences_UnicodeRange :: struct #packed {
     startUnicodeValue   : u24,
     additionalCount     : u8,
 }
 
-Table_cmap_Subtable_UnicodeVariationSequences_DefaultUVSTable :: struct {
+Table_cmap_Subtable_UnicodeVariationSequences_DefaultUVSTable :: struct #packed {
     numUnicodeValueRanges   : u32,
     ranges                  : [/*numUnicodeValueRanges*/]Table_cmap_Subtable_UnicodeVariationSequences_UnicodeRange,
 }
 
-Table_cmap_Subtable_UnicodeVariationSequences_UVSMapping :: struct {
+Table_cmap_Subtable_UnicodeVariationSequences_UVSMapping :: struct #packed {
     unicodeValue            : u24,
     glyphId                 : u16,
 }
 
-Table_cmap_Subtable_UnicodeVariationSequences_NonDefaultUVSTable :: struct {
+Table_cmap_Subtable_UnicodeVariationSequences_NonDefaultUVSTable :: struct #packed {
     numUVSMappings          : u32,
     uvsMappings             : [/*numUVSMappings*/]Table_cmap_Subtable_UnicodeVariationSequences_UVSMapping,
 }
 
 // 14
-Table_cmap_Subtable_UnicodeVariationSequences :: struct {
+Table_cmap_Subtable_UnicodeVariationSequences :: struct #packed {
     format                  : Table_cmap_SubtableFormat,
     length                  : u32,
     numVarSelectorRecords   : u32,
     varSelector             : [/*numVarSelectorRecords*/]Table_cmap_Subtable_UnicodeVariationSequences_VariationSelector,
+}
+
+// TODO: this needs extra arguments for a default UVS, finish later
+Table_cmap_decode_UnicodeVariationSequences :: proc (subtable : Table_cmap_Subtable_UnicodeVariationSequences, stream : []u8) -> (code : u32, rest : []u8, ok : bool = false) {
+    rest = stream
+    
+    char : u32
+    vars : u32
+
+    char, rest = parse_binary(u32, rest) or_return
+    vars, rest = parse_binary(u32, rest) or_return
+    code = 0
+
+    for varSelector in subtable.varSelector {
+        if !(vars == u24_to_u32(varSelector.varSelector)) do continue
+    }
+
+    ok = true
+    return
 }
 
 Table_cmap_Subtable :: union {
@@ -562,9 +711,10 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
 
         for i in 0 ..< table.numVarSelectorRecords {
             varSelector : Table_cmap_Subtable_UnicodeVariationSequences_VariationSelector
-            varSelector.varSelector, rest = parse_u24(rest) or_return
-            varSelector.defaultUVSOffset, rest = parse_binary(off32, rest) or_return
-            varSelector.nonDefaultUVSOffset, rest = parse_binary(off32, rest) or_return
+            varSelector, rest = parse_binary(Table_cmap_Subtable_UnicodeVariationSequences_VariationSelector, rest) or_return
+            // varSelector.varSelector, rest = parse_binary(u24, rest) or_return
+            // varSelector.defaultUVSOffset, rest = parse_binary(off32, rest) or_return
+            // varSelector.nonDefaultUVSOffset, rest = parse_binary(off32, rest) or_return
 
             startD := stream
             startN := stream
@@ -577,8 +727,11 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
 
                 for j in 0 ..< uvsTable.numUnicodeValueRanges {
                     range : Table_cmap_Subtable_UnicodeVariationSequences_UnicodeRange
-                    range.startUnicodeValue, startD = parse_u24(startD) or_return
-                    range.additionalCount, startD = parse_binary(u8, startD) or_return
+                    range, startD = parse_binary(Table_cmap_Subtable_UnicodeVariationSequences_UnicodeRange, startD) or_return
+                    // range.startUnicodeValue, startD = parse_binary(u24, startD) or_return
+                    // range.additionalCount, startD = parse_binary(u8, startD) or_return
+
+                    if u24_to_u32(range.startUnicodeValue + range.additionalCount) > 0xFFFFFF do return
                 }
             }
 
@@ -590,8 +743,9 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
 
                 for j in 0 ..< uvsTable.numUVSMappings {
                     mapping : Table_cmap_Subtable_UnicodeVariationSequences_UVSMapping
-                    mapping.unicodeValue, startN = parse_u24(startN) or_return
-                    mapping.glyphId, startN = parse_binary(u16, startN) or_return
+                    mapping, startN = parse_binary(Table_cmap_Subtable_UnicodeVariationSequences_UVSMapping, rest) or_return
+                    // mapping.unicodeValue, startN = parse_binary(u24, startN) or_return
+                    // mapping.glyphId, startN = parse_binary(u16, startN) or_return
                 }
             }
         }
