@@ -14,6 +14,7 @@ run :: proc () -> bool {
     data := os.read_entire_file_from_filename("CascadiaCode-Regular.otf") or_return
 
     tableDirectory, _ := parse_TableDirectory(data) or_return
+
     fmt.println(tableDirectory)
 
     fmt.println(size_of(Table_hhea_Header))
@@ -22,6 +23,14 @@ run :: proc () -> bool {
         tag := record.tag
         fmt.println(transmute(string)tag[:])
     }
+
+    CFFData := getTable(tableDirectory, "CFF ") or_return
+    CFF, _ := parse_Table_CFF(CFFData) or_return
+
+    fmt.println(CFF)
+
+    CFFName := transmute(string)CFF_Index_get(CFF.nameIndex, 0)
+    fmt.println(CFFName)
 
     return true
 }

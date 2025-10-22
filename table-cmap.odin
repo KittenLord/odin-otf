@@ -400,12 +400,7 @@ parse_Table_cmap_Header :: proc (stream : []u8) -> (value : Table_cmap_Header, r
     value.numTables, rest = parse_binary(u16be, rest) or_return
     if value.numTables > 20 do return
 
-    for i in 0 ..< value.numTables {
-        _, rest = parse_Table_cmap_EncodingRecord(rest) or_return
-    }
-
-    // SAFETY: we will only reach this if the loop above went through the appropriate amount of bytes
-    value.encodingRecords = (cast([^]Table_cmap_EncodingRecord)raw_data(rest))[0:value.numTables]
+    value.encodingRecords, rest = parse_n(Table_cmap_EncodingRecord, cast(int)value.numTables, rest) or_return
 
     ok = true
     return
@@ -439,14 +434,11 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
         for key in table.subHeaderKeys do if key > subHeaderCount do subHeaderCount = key
         subHeaderCount = (subHeaderCount / 8) + 1 // NOTE: there is at least 1 subHeader #0
 
-        subHeaderStart := rest
+        subHeadersStart := rest
 
         for i in 0 ..< subHeaderCount {
             subHeader : Table_cmap_Subtable_HighByteMappingThroughTable_SubHeader
-            subHeader.firstCode, rest = parse_binary(u16be, rest) or_return
-            subHeader.entryCount, rest = parse_binary(u16be, rest) or_return
-            subHeader.idDelta, rest = parse_binary(i16be, rest) or_return
-            subHeader.idRangeOffset, rest = parse_binary(u16be, rest) or_return
+            subHeader, rest = parse_binary(Table_cmap_Subtable_HighByteMappingThroughTable_SubHeader, rest) or_return
 
             if subHeader.firstCode > 255 || subHeader.entryCount > 255 || (subHeader.firstCode + subHeader.entryCount) > 255 do return
 
@@ -454,11 +446,11 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
             length := subHeader.entryCount * size_of(u16be)
             
             // SAFETY: if this succeeds, we can safely index into the array
-            _, _ = parse_n(cast(int)length, rest[offset:]) or_return
+            _, _ = parse_n(u8, cast(int)length, rest[offset:]) or_return
         }
 
-        // SAFETY: we access this only if the loop above went through subHeaderCount subHeaders
-        table.subHeaders = (cast([^]Table_cmap_Subtable_HighByteMappingThroughTable_SubHeader)raw_data(subHeaderStart))[0:subHeaderCount]
+        // NOTE: the loop above needs to keep track of the current offset, so it does the parsing
+        table.subHeaders, _ = parse_n(Table_cmap_Subtable_HighByteMappingThroughTable_SubHeader, cast(int)subHeaderCount, subHeadersStart) or_return
 
         value = table
     case .SegmentMappingToDeltaValues:
@@ -473,37 +465,10 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
 
         segCount := table.segCountX2 / 2
 
-        endCodeStart := rest
-
-        for i in 0 ..< segCount{
-            endCode : u16be
-            endCode, rest = parse_binary(u16be, rest) or_return
-        }
-
-        // SAFETY: we access this only if the loop above went through segCount entries
-        table.endCode = (cast([^]u16be)raw_data(endCodeStart))[0:segCount]
-
+        table.endCode, rest = parse_n(u16be, cast(int)segCount, rest) or_return
         table.reservedPad, rest = parse_binary(u16be, rest) or_return
-
-        startCodeStart := rest
-
-        for i in 0 ..< segCount {
-            startCode : u16be
-            startCode, rest = parse_binary(u16be, rest) or_return
-        }
-
-        // SAFETY: we access this only if the loop above went through segCount entries
-        table.startCode = (cast([^]u16be)raw_data(startCodeStart))[0:segCount]
-
-        idDeltaStart := rest
-
-        for i in 0 ..< segCount {
-            idDelta : i16be
-            idDelta, rest = parse_binary(i16be, rest) or_return
-        }
-
-        // SAFETY: we access this only if the loop above went through segCount entries
-        table.idDelta = (cast([^]i16be)raw_data(idDeltaStart))[0:segCount]
+        table.startCode, rest = parse_n(u16be, cast(int)segCount, rest) or_return
+        table.idDelta, rest = parse_n(i16be, cast(int)segCount, rest) or_return
 
         idRangeOffsetStart := rest
 
@@ -515,11 +480,11 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
             length := (table.endCode[i] - table.startCode[i]) * size_of(u16be)
 
             // SAFETY: if this succeeds, we can safely index into the array
-            _, _ = parse_n(cast(int)length, rest[offset:]) or_return
+            _, _ = parse_n(u8, cast(int)length, rest[offset:]) or_return
         }
 
-        // SAFETY: we access this only if the loop above went through segCount entries
-        table.idRangeOffset = (cast([^]u16be)raw_data(idRangeOffsetStart))[0:segCount]
+        // NOTE: the loop above needs to keep track of the current offset, so it does the parsing
+        table.idRangeOffset, _ = parse_n(u16be, cast(int)segCount, idRangeOffsetStart) or_return
 
         value = table
     case .TrimmedTableMapping:
@@ -529,16 +494,7 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
         table.language, rest = parse_binary(u16be, rest) or_return
         table.firstCode, rest = parse_binary(u16be, rest) or_return
         table.entryCount, rest = parse_binary(u16be, rest) or_return
-
-        glyphIdArrayStart := rest
-
-        for i in 0 ..< table.entryCount {
-            glyphId : u16be
-            glyphId, rest = parse_binary(u16be, rest) or_return
-        }
-
-        // SAFETY: we access this only if the loop above went through table.entryCount entries
-        table.glyphIdArray = (cast([^]u16be)raw_data(glyphIdArrayStart))[0:table.entryCount]
+        table.glyphIdArray, rest = parse_n(u16be, cast(int)table.entryCount, rest) or_return
 
         value = table
     case .Mixed16And32BitCoverage:
@@ -549,17 +505,7 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
         table.language, rest = parse_binary(u32be, rest) or_return
         table.is32, rest = parse_binary([8192]u8, rest) or_return
         table.numGroups, rest = parse_binary(u32be, rest) or_return
-
-        groupsStart := rest
-
-        for i in 0 ..< table.numGroups {
-            group : Table_cmap_Subtable_Mixed16And32BitCoverage_SequentialMapGroup
-            group.startCharCode, rest = parse_binary(u32be, rest) or_return
-            group.endCharCode, rest = parse_binary(u32be, rest) or_return
-            group.startGlyphId, rest = parse_binary(u32be, rest) or_return
-        }
-
-        table.groups = (cast([^]Table_cmap_Subtable_Mixed16And32BitCoverage_SequentialMapGroup)raw_data(groupsStart))[0:table.numGroups]
+        table.groups, rest = parse_n(Table_cmap_Subtable_Mixed16And32BitCoverage_SequentialMapGroup, cast(int)table.numGroups, rest) or_return
 
         value = table
     case .TrimmedArray:
@@ -570,16 +516,7 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
         table.language, rest = parse_binary(u32be, rest) or_return
         table.startCharCode, rest = parse_binary(u32be, rest) or_return
         table.numChars, rest = parse_binary(u32be, rest) or_return
-
-        glyphIdArrayStart := rest
-
-        for i in 0 ..< table.numChars {
-            glyphId : u16be
-            glyphId, rest = parse_binary(u16be, rest) or_return
-        }
-
-        // SAFETY: we access this only if the loop above went through table.numChars entries
-        table.glyphIdArray = (cast([^]u16be)raw_data(glyphIdArrayStart))[0:table.numChars]
+        table.glyphIdArray, rest = parse_n(u16be, cast(int)table.numChars, rest) or_return
 
         value = table
     case .SegmentedCoverage:
@@ -589,18 +526,7 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
         table.length, rest = parse_binary(u32be, rest) or_return
         table.language, rest = parse_binary(u32be, rest) or_return
         table.numGroups, rest = parse_binary(u32be, rest) or_return
-
-        groupsStart := rest
-
-        for i in 0 ..< table.numGroups {
-            group : Table_cmap_Subtable_SegmentedCoverage_SequentialMapGroup
-            group.startCharCode, rest = parse_binary(u32be, rest) or_return
-            group.endCharCode, rest = parse_binary(u32be, rest) or_return
-            group.startGlyphId, rest = parse_binary(u32be, rest) or_return
-        }
-
-        // SAFETY: we access this only if the loop above went through table.numGroups entries
-        table.groups = (cast([^]Table_cmap_Subtable_SegmentedCoverage_SequentialMapGroup)raw_data(groupsStart))[0:table.numGroups]
+        table.groups, rest = parse_n(Table_cmap_Subtable_SegmentedCoverage_SequentialMapGroup, cast(int)table.numGroups, rest) or_return
 
         value = table
     case .ManyToOneRangeMappings:
@@ -610,18 +536,7 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
         table.length, rest = parse_binary(u32be, rest) or_return
         table.language, rest = parse_binary(u32be, rest) or_return
         table.numGroups, rest = parse_binary(u32be, rest) or_return
-
-        groupsStart := rest
-
-        for i in 0 ..< table.numGroups {
-            group : Table_cmap_Subtable_ManyToOneRangeMappings_ConstantMapGroup
-            group.startCharCode, rest = parse_binary(u32be, rest) or_return
-            group.endCharCode, rest = parse_binary(u32be, rest) or_return
-            group.glyphId, rest = parse_binary(u32be, rest) or_return
-        }
-
-        // SAFETY: we access this only if the loop above went through table.numGroups entries
-        table.groups = (cast([^]Table_cmap_Subtable_ManyToOneRangeMappings_ConstantMapGroup)raw_data(groupsStart))[0:table.numGroups]
+        table.groups, _ = parse_n(Table_cmap_Subtable_ManyToOneRangeMappings_ConstantMapGroup, cast(int)table.numGroups, rest) or_return
 
         value = table
     case .UnicodeVariationSequences:
@@ -642,7 +557,7 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
             startN := stream
 
             if varSelector.defaultUVSOffset != 0 {
-                _, startD = parse_n(cast(int)varSelector.defaultUVSOffset, startD) or_return
+                _, startD = parse_n(u8, cast(int)varSelector.defaultUVSOffset, startD) or_return
 
                 uvsTable : Table_cmap_Subtable_UnicodeVariationSequences_DefaultUVSTable
                 uvsTable.numUnicodeValueRanges, startD = parse_binary(u32be, startD) or_return
@@ -657,7 +572,7 @@ parse_Table_cmap_Subtable :: proc (record : Table_cmap_EncodingRecord, stream : 
             }
 
             if varSelector.nonDefaultUVSOffset != 0 {
-                _, startN = parse_n(cast(int)varSelector.nonDefaultUVSOffset, startN) or_return
+                _, startN = parse_n(u8, cast(int)varSelector.nonDefaultUVSOffset, startN) or_return
 
                 uvsTable : Table_cmap_Subtable_UnicodeVariationSequences_NonDefaultUVSTable
                 uvsTable.numUVSMappings, startN = parse_binary(u32be, startN) or_return

@@ -100,12 +100,12 @@ parse_Table_name_Header :: proc (stream : []u8) -> (value : Table_name_Header1, 
 
     for record in value.langTagRecord {
         data := rest[record.langTagOffset:]
-        _, _ = parse_n(cast(int)record.length, data) or_return
+        _, _ = parse_n(u8, cast(int)record.length, data) or_return
     }
 
     for record in value.nameRecord {
         data := rest[record.stringOffset:]
-        _, _ = parse_n(cast(int)record.length, data) or_return
+        _, _ = parse_n(u8, cast(int)record.length, data) or_return
     }
 
     ok = true

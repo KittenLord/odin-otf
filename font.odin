@@ -51,6 +51,8 @@ SfntVersion :: enum u32be {
 }
 
 TableDirectory :: struct #packed {
+    data : rawptr,
+
     sfntVersion     : SfntVersion,
     numTables       : u16be,
 
@@ -75,27 +77,37 @@ TableRecord :: struct #packed {
 parse_TableDirectory :: proc (stream : []u8) -> (value : TableDirectory, rest : []u8, ok : bool = false) {
     rest = stream
 
+    value.data = raw_data(stream)
     value.sfntVersion, rest = parse_binary(SfntVersion, rest) or_return
     value.numTables, rest = parse_binary(u16be, rest) or_return
     value.searchRange, rest = parse_binary(u16be, rest) or_return
     value.entrySelector, rest = parse_binary(u16be, rest) or_return
     value.rangeShift, rest = parse_binary(u16be, rest) or_return
+    value.records, rest = parse_n(TableRecord, cast(int)value.numTables, rest) or_return
+
+    // TODO: verify ranges
 
     is_in_enum(value.sfntVersion) or_return
 
-    recordsStart := rest
+    ok = true
+    return
+}
 
-    for i in 0 ..< value.numTables {
-        record : TableRecord
-        record.tag, rest = parse_binary(Tag, rest) or_return
-        record.checksum, rest = parse_binary(u32be, rest) or_return
-        record.offset, rest = parse_binary(off32be, rest) or_return
-        record.length, rest = parse_binary(u32be, rest) or_return
+getTable :: proc (dir : TableDirectory, tagString : string) -> (data : []u8, ok : bool = false) {
+    if len(tagString) != 4 do return
+
+    tagBytes := transmute([]u8)tagString
+    tag : Tag = { tagBytes[0], tagBytes[1], tagBytes[2], tagBytes[3] }
+
+    for table in dir.records {
+        if table.tag != tag do continue
+
+        // TODO: verify checksum
+        data = (cast([^]u8)dir.data)[table.offset:][:table.length]
+        ok = true
+        return
     }
 
-    value.records = (cast([^]TableRecord)raw_data(recordsStart))[0:value.numTables]
-
-    ok = true
     return
 }
 
