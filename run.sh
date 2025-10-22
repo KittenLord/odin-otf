@@ -1,1 +1,1 @@
-odin build . -out:out && ./out
+odin build . -debug -out:out && ./out

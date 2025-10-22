@@ -29,8 +29,14 @@ run :: proc () -> bool {
 
     fmt.println(CFF)
 
-    CFFName := transmute(string)CFF_Index_get(CFF.nameIndex, 0)
+    CFFName := transmute(string)CFF_Index_get(CFF.names, 0)
     fmt.println(CFFName)
+
+    CFFTopRaw := CFF_Index_get(CFF.topData, 0)
+    fmt.println(len(CFFTopRaw))
+    CFFTopData, _ := CFF_parse_TopData(CFFTopRaw) or_return
+
+    fmt.println(CFFTopData)
 
     return true
 }
