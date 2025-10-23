@@ -25,15 +25,18 @@ run :: proc () -> bool {
     }
 
     CFFData := getTable(tableDirectory, "CFF ") or_return
-    CFF, _ := parse_Table_CFF(CFFData) or_return
+    CFF, rest := parse_Table_CFF(CFFData) or_return
 
-    fmt.println(CFF)
+    fmt.println(len(CFFData) - len(rest))
+
+    // fmt.println(CFF)
 
     CFFName := transmute(string)CFF_Index_get(CFF.names, 0)
     fmt.println(CFFName)
 
     CFFTopRaw := CFF_Index_get(CFF.topData, 0)
-    fmt.println(len(CFFTopRaw))
+    // fmt.println(len(CFFTopRaw))
+    fmt.println(CFF.topData.count)
     CFFTopData, _ := CFF_parse_TopData(CFFTopRaw) or_return
 
     fmt.println(CFFTopData)

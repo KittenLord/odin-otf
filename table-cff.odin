@@ -30,6 +30,17 @@ CFF_Number_from_Operand :: proc (op : CFF_Operand) -> (value : CFF_Number, ok : 
     return
 }
 
+// I think we just dont care if it overflows and just check if theres enough memory down the line
+CFF_i64_from_Operand :: proc (op : CFF_Operand) -> (value : i64, ok : bool = false) {
+    value, ok = op.(i64)
+    if !ok {
+        i : f64
+        i, ok = op.(f64)
+        value = cast(i64)i
+    }
+    return
+}
+
 CFF_f64_from_Operand :: proc (op : CFF_Operand) -> (value : f64, ok : bool = false) {
     value, ok = op.(f64)
     if !ok {
@@ -52,6 +63,8 @@ CFF_sid_from_Operand :: proc (op : CFF_Operand) -> (value : sid, ok : bool = fal
     return
 }
 
+CFF_Charstring :: struct {}
+
 Table_CFF :: struct {
     header              : CFF_Header,
     names               : CFF_Index(string),
@@ -61,7 +74,7 @@ Table_CFF :: struct {
     // encodings           : //,
     // charsets            : //,
     // fdSelect            : //,
-    // charStringsIndex    : CFF_Index,
+    charstringsIndex    : CFF_Index(CFF_Charstring),
     // fontDictIndex       : CFF_DictIndex,
     // privateDict         : CFF_Dict,
     // localSubrIndex      : CFF_Index,
@@ -100,15 +113,15 @@ CFF_TopData :: struct {
     underlinePosition       : f64,              // 12 3
     underlineThickness      : f64,              // 12 4
     paintType               : CFF_Number,       // 12 5
-    charstringType          : CFF_Number,       // 12 6
+    charstringType          : u64,              // 12 6
     fontMatrix              : [6]f64,           // 12 7 // NOTE: i have no clue what this is
     uniqueId                : CFF_Number,       // 13
     fontBBox                : [4]CFF_Number,    // 5
     strokeWidth             : CFF_Number,       // 12 8
     xuid                    : []u8,             // 14 
-    charset                 : CFF_Number,       // 15
-    encoding                : CFF_Number,       // 16
-    charStrings             : CFF_Number,       // 17
+    charset                 : u64,              // 15
+    encoding                : u64,              // 16
+    charstrings             : u64,              // 17
     private                 : [2]CFF_Number,    // 18
     syntheticBase           : CFF_Number,       // 12 20
     postScript              : sid,              // 12 21
@@ -127,6 +140,127 @@ CFF_TopData :: struct {
     fontName                : sid,              // 12 38
 }
 
+CFF_PredefinedEncoding :: enum u64 {
+    Standard = 0,
+    Expert = 1,
+}
+
+CFF_PredefinedCharset :: enum u64 {
+    ISOAdobe = 0,
+    Expert = 1,
+    ExpertSubset = 2,
+}
+
+CFF_EncodingFormat :: enum u8 {
+    Consecutive         = 0x00,
+    Ranges              = 0x01,
+    ConsecutiveExtra    = 0x80,
+    RangesExtra         = 0x81,
+}
+
+CFF_EncodingSupplement :: struct #packed {
+    code            : u8,
+    glyph           : sid,
+}
+
+CFF_EncodingExtra :: struct #packed {
+    nSups           : u8,
+    supplements     : [/*nSups*/]CFF_EncodingSupplement,
+}
+
+CFF_Encoding0 :: struct #packed {
+    format          : CFF_EncodingFormat,
+    nCodes          : u8,
+    codes           : [/*nCodes*/]u8,
+
+    using extra : CFF_EncodingExtra,
+}
+
+CFF_EncodingRange :: struct #packed {
+    first           : u8,
+    nLeft           : u8, // total amount - 1
+}
+
+CFF_Encoding1 :: struct #packed {
+    format          : CFF_EncodingFormat,
+    nRanges         : u8,
+    ranges          : [/*nRanges*/]CFF_EncodingRange,
+
+    using extra : CFF_EncodingExtra,
+}
+
+// TODO: i wanted to finish the encoding parsing even though
+// it's technically not needed (OTF has its own, much more
+// modern, encoding), but nah im too bored
+
+CFF_Encoding :: distinct [256]sid
+
+parse_CFF_Encoding :: proc (stream : []u8) -> (value : CFF_Encoding, rest : []u8, ok : bool = false) {
+    rest = stream
+
+    format : CFF_EncodingFormat
+    format, rest = parse_binary(CFF_EncodingFormat, rest) or_return
+    is_in_enum(format) or_return
+
+    if format == .Consecutive || format == .ConsecutiveExtra {
+        e : CFF_Encoding0
+        e.format = format
+        e.nCodes, rest = parse_binary(u8, rest) or_return
+        e.codes, rest = parse_n(u8, cast(int)e.nCodes, rest) or_return
+
+        if format == .ConsecutiveExtra {
+            e.nSups, rest = parse_binary(u8, rest) or_return
+            e.supplements, rest = parse_n(CFF_EncodingSupplement, cast(int)e.nSups, rest) or_return
+        }
+    }
+
+    if format == .Ranges || format == .RangesExtra {
+        e : CFF_Encoding1
+        e.format = format
+        e.nRanges, rest = parse_binary(u8, rest) or_return
+        e.ranges, rest = parse_n(CFF_EncodingRange, cast(int)e.nRanges, rest) or_return
+
+        if format == .RangesExtra {
+            e.nSups, rest = parse_binary(u8, rest) or_return
+            e.supplements, rest = parse_n(CFF_EncodingSupplement, cast(int)e.nSups, rest) or_return
+        }
+    }
+
+    ok = true
+    return
+}
+
+CFF_CharsetFormat :: enum u8 {
+    Consecutive     = 0,
+    Ranges          = 1,
+    Ranges16        = 2,
+}
+
+CFF_Charset0 :: struct #packed {
+    format          : CFF_CharsetFormat,
+    glyphs          : [/*nGlyphs - 1*/]sid,
+}
+
+CFF_CharsetRange1 :: struct #packed {
+    first           : sid,
+    nLeft           : u8,  // total amount - 1
+}
+
+CFF_Charset1 :: struct #packed {
+    format          : CFF_CharsetFormat,
+    ranges          : [/*idk*/]CFF_CharsetRange1,
+}
+
+CFF_CharsetRange2 :: struct #packed {
+    first           : sid,
+    nLeft           : u16,  // total amount - 1
+}
+
+CFF_Charset2 :: struct #packed {
+    format          : CFF_CharsetFormat,
+    ranges          : [/*idk*/]CFF_CharsetRange2,
+}
+
 parse_Table_CFF :: proc (stream : []u8) -> (value : Table_CFF, rest : []u8, ok : bool = false) {
     rest = stream
 
@@ -134,6 +268,9 @@ parse_Table_CFF :: proc (stream : []u8) -> (value : Table_CFF, rest : []u8, ok :
     value.names, rest = CFF_parse_Index(string, rest) or_return
     value.topData, rest = CFF_parse_Index(CFF_Dict(CFF_TopData), rest) or_return
     value.strings, rest = CFF_parse_Index(string, rest) or_return
+
+    // TODO: go through and verify every per-font thing
+    // (top data, charstrings, etc)
 
     ok = true
     return
@@ -531,13 +668,13 @@ CFF_parse_TopData :: proc (stream : []u8) -> (value : CFF_TopData, rest : []u8, 
             //
         case 15:
             if operandCount != 1 do return
-            value.charset = CFF_Number_from_Operand(operands[0]) or_return
+            value.charset = cast(u64)CFF_i64_from_Operand(operands[0]) or_return
         case 16:
             if operandCount != 1 do return
-            value.encoding = CFF_Number_from_Operand(operands[0]) or_return
+            value.encoding = cast(u64)CFF_i64_from_Operand(operands[0]) or_return
         case 17:
             if operandCount != 1 do return
-            value.charStrings = CFF_Number_from_Operand(operands[0]) or_return
+            value.charstrings = cast(u64)CFF_i64_from_Operand(operands[0]) or_return
         case 18:
             if operandCount != 2 do return
             value.private[0] = CFF_Number_from_Operand(operands[0]) or_return
@@ -567,7 +704,7 @@ CFF_parse_TopData :: proc (stream : []u8) -> (value : CFF_TopData, rest : []u8, 
                 value.paintType = CFF_Number_from_Operand(operands[0]) or_return
             case 6:
                 if operandCount != 1 do return
-                value.charstringType = CFF_Number_from_Operand(operands[0]) or_return
+                value.charstringType = cast(u64)CFF_i64_from_Operand(operands[0]) or_return
             case 7:
                 if operandCount != 6 do return
                 for i in 0 ..< 6 do value.fontMatrix[i] = CFF_f64_from_Operand(operands[i]) or_return
